@@ -275,16 +275,19 @@ class Indutor(Componente):
         # Equação da tensão: V1 - V2 = L * di/dt
         # Com Backward Euler: V1 - V2 = L * (i(t+Δt) - i(t))/Δt
         # Rearranjando: V1 - V2 - L/Δt * i(t+Δt) = -L/Δt * i(t)
-        
-        Gn[self._posicao_nos[0], self._nos_mod[0]] += 1
-        Gn[self._posicao_nos[1], self._nos_mod[0]] -= 1
+        vab = tensoes[self._posicao_nos[0]] - tensoes[self._posicao_nos[1]]
 
-
-        Gn[self._nos_mod[0], self._posicao_nos[0]] -= 1
-        Gn[self._nos_mod[0], self._posicao_nos[1]] += 1
+        Gn[self._posicao_nos[0], self._nos_mod[0]] -= 1
+        Gn[self._posicao_nos[1], self._nos_mod[0]] += 1
+        Gn[self._nos_mod[0], self._posicao_nos[0]] += 1
+        Gn[self._nos_mod[0], self._posicao_nos[1]] -= 1
         Gn[self._nos_mod[0], self._nos_mod[0]] += self.valor/self.passo
 
-        I[self._nos_mod[0]] += (self.valor/self.passo)*self.ic
+        if t == 0.0:
+            I[self._nos_mod[0]] += (self.valor/self.passo)*self.ic
+        else:
+            I[self._nos_mod[0]] += (self.valor/self.passo)*vab
+
         return Gn, I
 
 class Capacitor(Componente):
@@ -340,6 +343,7 @@ class Capacitor(Componente):
         '''
         # Condutância equivalente do capacitor
         condutancia = self.valor / self.passo
+        vab = (tensoes[self._posicao_nos[0]] - tensoes[self._posicao_nos[1]])
         
         # Estampa da condutância
         Gn[self._posicao_nos[0], self._posicao_nos[0]] += condutancia
@@ -347,9 +351,16 @@ class Capacitor(Componente):
         Gn[self._posicao_nos[1], self._posicao_nos[0]] -= condutancia
         Gn[self._posicao_nos[1], self._posicao_nos[1]] += condutancia
 
+        I[self._posicao_nos[0]] += condutancia*vab
+        I[self._posicao_nos[1]] -= condutancia*vab 
+
         # Termo histórico da tensão anterior
-        I[self._posicao_nos[0]] += condutancia * self.ic
-        I[self._posicao_nos[1]] -= condutancia * self.ic
+        '''if t == 0.0:
+            I[self._posicao_nos[0]] += condutancia*self.ic
+            I[self._posicao_nos[1]] -= condutancia*self.ic
+        else:
+            I[self._posicao_nos[0]] += condutancia*vab
+            I[self._posicao_nos[1]] -= condutancia*vab '''
         return Gn, I
 
 class ResistorNaoLinear(Componente):
@@ -495,11 +506,10 @@ class FonteTensaoTensao(Componente):
         # Contribuições para a equação da tensão
         Gn[self._posicao_nos[0], no_corrente] += 1  # V1
         Gn[self._posicao_nos[1], no_corrente] -= 1  # V2
+
+        # Equação da corrente da fonte
         Gn[no_corrente, self._posicao_nos[2]] += self.valor  # A*V3
         Gn[no_corrente, self._posicao_nos[3]] -= self.valor  # A*V4
-        
-        
-        # Equação da corrente da fonte
         Gn[no_corrente, self._posicao_nos[0]] -= 1
         Gn[no_corrente, self._posicao_nos[1]] += 1
         
@@ -642,7 +652,7 @@ class Diodo(Componente):
     '''!
     @brief Esta classe implementa o Diodo e sua estampa
     '''
-    _linear = True
+    _linear = False
     _num_nos = 2
     _num_nos_mod = 2
     def __init__(self, name: str, nos: list[str]):
@@ -669,6 +679,10 @@ class Diodo(Componente):
 
     def estampaBE(self, Gn, I, t, tensoes):
         vab = tensoes[self._posicao_nos[0]] - tensoes[self._posicao_nos[1]]
+
+        if vab > 0.9:
+            vab = 0.9
+
         g0 = 3.7751345e-14*np.exp(vab/25e-3)/25e-3
         id = 3.7751345e-14*(np.exp(vab/25e-3)-1)-g0*vab
 
@@ -709,7 +723,8 @@ class AmpOp(Componente):
         # Equação da tensão de saída: Vout = A * (V+ - V-)
         # Para amp op ideal: A = infinito, então V+ = V-
         # Equação: V+ - V- = 0
-        
+
+        '''
         # Contribuições para a equação V+ - V- = 0
         Gn[self._posicao_nos[0], no_corrente] -= 1  # -V+
         Gn[self._posicao_nos[1], no_corrente] += 1  # +V-
@@ -718,6 +733,15 @@ class AmpOp(Componente):
         Gn[no_corrente, self._posicao_nos[0]] += 1   # +V+
         Gn[no_corrente, self._posicao_nos[1]] -= 1   # -V-
         Gn[no_corrente, self._posicao_nos[2]] += 1   # +Vout
+        ''' 
+    
+        #Gn[0, no_corrente] -= 1
+        Gn[self._posicao_nos[2], no_corrente] += 1
+
+        Gn[no_corrente, self._posicao_nos[0]] -= 1
+        Gn[no_corrente, self._posicao_nos[1]] += 1
+        
+
         
         return Gn, I
 
