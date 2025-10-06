@@ -519,7 +519,12 @@ class FonteTensaoTensao(Componente):
 # corrente controlada por corrente
 class FonteCorrenteCorrente(Componente):
     '''!
-    @brief Esta classe implementa a Fonte de corrente controlada por corrente e sua estampa
+    @brief Fonte de Corrente Controlada por Corrente (F)
+    @details A corrente de saída entre os nós é uma função da corrente que flui
+    através de uma fonte de tensão de controle.
+    Netlist: F<nome> <nó_saida+> <nó_saida-> <V_controle> <ganho>
+    A estampa adiciona o ganho (A) na matriz Gn, acoplando a corrente de saída
+    à corrente da fonte de tensão de controle (jx).
     '''
     _linear = True
     _num_nos = 4
@@ -542,6 +547,20 @@ class FonteCorrenteCorrente(Componente):
         return 'F' + self.name + ' ' + ' '.join(str(no) for no in self.nos) + ' ' + str(self.valor)
 
     def estampaBE(self, Gn, I, t, tensoes):
+        '''!
+        @brief Gera a estampa do componente para o método de Euler para trás.
+        @details A corrente entre no_mais e no_menos é 'ganho * jx', onde jx é a
+        corrente que flui pela fonte de tensão de controle.
+        KCL @ no_mais: ... - ganho * jx = 0  => Gn[no_mais, jx] -= ganho
+        KCL @ no_menos: ... + ganho * jx = 0 => Gn[no_menos, jx] += ganho
+        '''
+        Gn[self._posicao_nos[0], self._nos_mod[0]] -= self.valor
+        Gn[self._posicao_nos[1], self._nos_mod[0]] += self.valor
+        Gn[self._posicao_nos[2], self._nos_mod[0]] += 1
+        Gn[self._posicao_nos[3], self._nos_mod[0]] -= 1
+        Gn[self._nos_mod[0], self._posicao_nos[2]] -= 1
+        Gn[self._nos_mod[0], self._posicao_nos[3]] += 1
+       
         return Gn, I
 
 # corrente controlada por tensao
@@ -747,13 +766,148 @@ class AmpOp(Componente):
 
 class Mosfet(Componente):
     '''!
-    @brief Esta classe implementa o transistor MOSFET e sua estampa
+    @brief Transistor MOSFET (nível 1).
+    @details Componente não linear de 3 terminais (Dreno, Porta, Fonte).
+    Seu comportamento é dividido em três regiões: corte, triodo e saturação.
+    A estampa é baseada no modelo companheiro do componente, que consiste
+    em uma fonte de corrente controlada por tensão (Gm*Vgs), uma condutância
+    de saída (Gds) e uma fonte de corrente equivalente (Ieq) para linearizar
+    o comportamento em torno do ponto de operação atual.
+    Netlist: M<nome> <nó_D> <nó_G> <nó_S> <tipo> W=<val> L=<val> K=<val> Vth=<val>
     '''
-    def __init__(self):
+    _num_nos = 3 # Dreno, Porta, Fonte
+    _num_nos_mod = 0
+    _linear = False
+
+    def __init__(self, name: str, nos: list[str], tipo: str, W: float, L: float, lbda: float, K: float, Vth: float):
         '''!
-        @brief Construtor do Mosfet
+        @brief Construtor do MOSFET.
+        @param name Nome do componente.
+        @param nos Lista de nós no formato ['D', 'G', 'S'].
+        @param W parâmetro W do MOSFET.
+        @param L parâmetro L do MOSFET.
+        @param lbda parâmetro lambda do MOSFET.
+        @param K parâmetro K do MOSFET.
+        @param Vth parâmetro Vth (tensão) do MOSFET.
         '''
-        raise NotImplementedError
+        super().__init__(name, nos)
+        self.tipo = tipo
+        self.W = W
+        self.L = L
+        self.K = K
+        self.Vth = Vth
+        self.lbda = lbda
+        # Beta é a constante de ganho do transistor
+        self.beta = self.K * (self.W / self.L)
+
+    def __str__(self):
+        
+        '''!
+        @brief Retorna representação do MOSFET como linha da netlist
+        @return String no formato "M<nome> <nó-drain> <nó-gate> <nó-source> <tipo> <W> <L> <lambda> <K> <Vth>"
+        @details Formato específico para MOSFET tipo P ou tipo N.
+        '''
+        return 'M' + self.name + ' ' + ' '.join(str(no) for no in self.nos) + ' ' + self.tipo + ' ' + str(self.W) + ' ' + str(self.L) + ' ' + str(self.lbda) + ' ' + str(self.K) + ' ' + str(self.Vth)
+
+    def estampaBE(self, Gn, I, t, tensoes):
+        '''!
+        @brief Gera a estampa do MOSFET para o método de Euler para trás.
+        @details Utiliza as tensões da iteração anterior de Newton-Raphson
+        para calcular a região de operação e os parâmetros do modelo companheiro.
+        '''
+        d = self._posicao_nos[0]
+        g = self._posicao_nos[1]
+        s = self._posicao_nos[2]
+
+        # Tensões da iteração anterior de Newton-Raphson
+        vd = tensoes[d]
+        vg = tensoes[g]
+        vs = tensoes[s]
+
+        # Inicializa parâmetros do modelo companheiro
+        i_d = 0.0
+        gm = 0.0
+        gds = 1e-9 # Condutância pequena para evitar matriz singular
+
+        if self.tipo == 'N':
+            vgs = vg - vs
+            vds = vd - vs
+            vth = self.Vth
+
+            if vgs <= vth:
+                # Região de Corte
+                pass # i_d, gm, gds já são zero (ou próximo)
+            elif vds < (vgs - vth):
+                # Região de Triodo
+                i_d = self.beta * ((vgs - vth) * vds - 0.5 * vds**2)
+                gm = self.beta * vds
+                gds = self.beta * (vgs - vth - vds)
+            else: # vds >= (vgs - vth)
+                # Região de Saturação
+                i_d = 0.5 * self.beta * (vgs - vth)**2
+                gm = self.beta * (vgs - vth)
+                gds = 0.0
+
+            # Fonte de corrente equivalente do modelo companheiro
+            ieq = i_d - gm * vgs - gds * vds
+           
+            # Estampa do modelo companheiro (VCCS + Gds + Ieq)
+            # Contribuição de Gds (resistor entre Dreno e Fonte)
+            Gn[d, d] += gds
+            Gn[d, s] -= gds
+            Gn[s, d] -= gds
+            Gn[s, s] += gds
+           
+            # Contribuição de Gm (fonte de corrente D->S controlada por Vgs)
+            Gn[d, g] += gm
+            Gn[d, s] -= gm
+            Gn[s, g] -= gm
+            Gn[s, s] += gm
+           
+            # Contribuição da fonte de corrente Ieq
+            I[d] -= ieq
+            I[s] += ieq
+
+        elif self.tipo == 'P':
+            vsg = vs - vg
+            vsd = vs - vd
+            vth = abs(self.Vth) # Vth do PMOS é negativo, mas usamos seu módulo nas fórmulas
+
+            if vsg <= vth:
+                # Região de Corte
+                pass # i_d, gm, gds já são zero
+            elif vsd < (vsg - vth):
+                # Região de Triodo
+                i_d = self.beta * ((vsg - vth) * vsd - 0.5 * vsd**2)
+                gm = self.beta * vsd
+                gds = self.beta * (vsg - vth - vsd)
+            else: # vsd >= (vsg - vth)
+                # Região de Saturação
+                i_d = 0.5 * self.beta * (vsg - vth)**2
+                gm = self.beta * (vsg - vth)
+                gds = 0.0
+
+            # i_d calculado é a corrente S->D. Ieq também é S->D.
+            ieq = i_d - gm * vsg - gds * vsd
+           
+            # Estampa do modelo companheiro para PMOS
+            # Contribuição de Gds (resistor entre Fonte e Dreno)
+            Gn[s, s] += gds
+            Gn[s, d] -= gds
+            Gn[d, s] -= gds
+            Gn[d, d] += gds
+           
+            # Contribuição de Gm (fonte de corrente S->D controlada por Vsg)
+            Gn[s, g] -= gm
+            Gn[s, s] += gm
+            Gn[d, g] += gm
+            Gn[d, s] -= gm
+           
+            # Contribuição da fonte de corrente Ieq (S->D)
+            I[s] -= ieq
+            I[d] += ieq
+           
+        return Gn, I
 
 class FonteCorrente(Componente):
     '''!

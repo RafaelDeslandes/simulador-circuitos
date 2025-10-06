@@ -11,18 +11,18 @@ def test_chua():
 
 def test_dc_source():
     netlist('dc_source.net')
-    
+
 def test_lc():
     netlist('lc.net')
-    
-'''def test_mosfet_curve():
-    netlist('mosfet_curve.net')'''
+
+def test_mosfet_curve():
+    netlist('mosfet_curve.net')
 
 def test_oscilator():
     netlist('oscilator.net')
-    
+
 def test_pulse():
     netlist('pulse.net')
-    
+
 def test_sinusoidal():
     netlist('sinusoidal.net')

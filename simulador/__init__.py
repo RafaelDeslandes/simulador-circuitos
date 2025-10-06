@@ -165,8 +165,7 @@ def import_netlist(filename: str):
             elif tipo == 'D':
                 componentes.append(Diodo(c[0][1:], [c[1], c[2]]))
             elif tipo == 'M':
-                raise NotImplementedError
-                componentes.append(Mosfet(c[0][1:], [c[1], c[2], c[3]], c[4], c[5], c[6], c[7], c[8], c[9]))
+                componentes.append(Mosfet(c[0][1:], [c[1], c[2], c[3]], c[4], float(c[5]), float(c[6]), float(c[7]), float(c[8]), float(c[9])))
             elif tipo == 'I':
                 componentes.append(FonteCorrente(c[0][1:], [c[1], c[2]], c[3:]))
             elif tipo == 'V':
