@@ -276,13 +276,15 @@ class Indutor(Componente):
         # Com Backward Euler: V1 - V2 = L * (i(t+Δt) - i(t))/Δt
         # Rearranjando: V1 - V2 - L/Δt * i(t+Δt) = -L/Δt * i(t)
         
-        Gn[self._posicao_nos[0], self._nos_mod[0]] -= 1
-        Gn[self._posicao_nos[1], self._nos_mod[0]] += 1
-        Gn[self._nos_mod[0], self._posicao_nos[0]] += 1
-        Gn[self._nos_mod[0], self._posicao_nos[1]] -= 1
-        Gn[self._nos_mod[0], self._nos_mod[0]] += (self.valor/self.passo)*self.ic
+        Gn[self._posicao_nos[0], self._nos_mod[0]] += 1
+        Gn[self._posicao_nos[1], self._nos_mod[0]] -= 1
 
-        I[self._nos_mod[0]] += self.valor/self.passo
+
+        Gn[self._nos_mod[0], self._posicao_nos[0]] -= 1
+        Gn[self._nos_mod[0], self._posicao_nos[1]] += 1
+        Gn[self._nos_mod[0], self._nos_mod[0]] += self.valor/self.passo
+
+        I[self._nos_mod[0]] += (self.valor/self.passo)*self.ic
         return Gn, I
 
 class Capacitor(Componente):
@@ -491,17 +493,18 @@ class FonteTensaoTensao(Componente):
         # Rearranjando: V1 - V2 - A*V3 + A*V4 = 0
         
         # Contribuições para a equação da tensão
-        Gn[self._posicao_nos[0], no_corrente] -= 1  # V1
-        Gn[self._posicao_nos[1], no_corrente] += 1  # V2
-        Gn[self._posicao_nos[2], no_corrente] += self.valor  # A*V3
-        Gn[self._posicao_nos[3], no_corrente] -= self.valor  # A*V4
+        Gn[self._posicao_nos[0], no_corrente] += 1  # V1
+        Gn[self._posicao_nos[1], no_corrente] -= 1  # V2
+        Gn[no_corrente, self._posicao_nos[2]] += self.valor  # A*V3
+        Gn[no_corrente, self._posicao_nos[3]] -= self.valor  # A*V4
+        
         
         # Equação da corrente da fonte
-        Gn[no_corrente, self._posicao_nos[0]] += 1
-        Gn[no_corrente, self._posicao_nos[1]] -= 1
+        Gn[no_corrente, self._posicao_nos[0]] -= 1
+        Gn[no_corrente, self._posicao_nos[1]] += 1
         
         return Gn, I
-        return Gn, I
+        
 
 # corrente controlada por corrente
 class FonteCorrenteCorrente(Componente):
@@ -799,10 +802,10 @@ class FonteTensao(Componente):
         
         # Estampa da condutância
         Gn[self._posicao_nos[0], self._nos_mod[0]] += 1
-        Gn[self._posicao_nos[0], self._nos_mod[0]] -= 1
+        Gn[self._posicao_nos[1], self._nos_mod[0]] -= 1
         Gn[self._nos_mod[0], self._posicao_nos[0]] -= 1
         Gn[self._nos_mod[0], self._posicao_nos[1]] += 1
 
         # Termo histórico da tensão anterior
-        I[self._nos_mod[0]] += tensao
+        I[self._nos_mod[0]] -= tensao
         return Gn, I
